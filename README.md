@@ -133,7 +133,7 @@ services:
 
 AI 默认关闭。启用后，页面会出现可用的“AI 分析当前日志”按钮。
 
-后端只会发送用户当前筛选条件下的最近 N 行日志，并在发送前自动脱敏：
+后端只会发送用户当前筛选条件下被选中的日志，并在发送前自动脱敏：
 
 - IP
 - MAC
@@ -166,6 +166,13 @@ curl http://127.0.0.1:8080/health
 ```
 
 注意：不要把 `.env` 提交到 GitHub。
+
+AI 选择模式：
+
+- `按设备重要日志`：默认模式。后端先扩大扫描窗口，再按设备分组，按严重级别和问题类别选取每台设备的前 N 条重要日志，避免 NAS 高频日志挤掉路由器、AP 等设备。
+- `当前最近日志`：保持旧逻辑，只分析当前筛选条件下的最近 N 行。
+
+页面里的“每设备”表示每台设备最多发送多少条重要日志；最终发送总量仍受页面“行数”和服务端 `MAX_AI_LINES=1000` 限制。
 
 ## 规则库
 
@@ -270,6 +277,7 @@ GET /api/logs?file=messages&limit=500&compact=false
 GET /api/analyze?file=messages&limit=2000
 GET /api/summary
 GET /api/ai-analyze?file=messages&limit=500&severity=warning
+GET /api/ai-analyze?limit=500&ai_mode=balanced&per_device_limit=30
 GET /api/rules
 ```
 
@@ -280,6 +288,8 @@ GET /api/rules
 - 不允许 `../../` 路径穿越。
 - `/api/logs` 默认 `compact=true`，会把连续近似日志合并展示；需要逐行原始日志时设置 `compact=false`。
 - `compact_gap_seconds` 默认 `120`，表示相邻两条近似日志在该时间间隔内才会合并。
+- `/api/ai-analyze` 默认 `ai_mode=balanced`，按设备均衡选择重要日志；设置 `ai_mode=recent` 可使用最近 N 行。
+- `per_device_limit` 默认 `30`，表示每台设备最多选取多少条重要日志。
 - `/api/ai-analyze` 只有在 `ENABLE_AI=true` 且配置了 `OPENAI_API_KEY` 后可用。
 
 ## UGREEN NAS 日志中心接入

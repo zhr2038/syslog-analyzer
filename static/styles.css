@@ -239,6 +239,19 @@ body {
   align-items: center;
 }
 
+.ai-controls {
+  display: grid;
+  grid-template-columns: auto minmax(132px, 1fr) auto minmax(78px, 0.7fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 360px;
+}
+
+.ai-controls .form-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
 .ai-result {
   margin: 14px;
   border: 1px solid var(--line);
@@ -343,6 +356,12 @@ body {
 
   .panel-header {
     display: block;
+  }
+
+  .ai-controls {
+    grid-template-columns: 1fr 1fr;
+    min-width: 0;
+    margin: 12px 0;
   }
 
   .metric-value {

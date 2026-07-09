@@ -137,9 +137,23 @@
               <h2>AI 分析</h2>
               <p id="ai-status-text">检查 AI 配置中</p>
             </div>
+            <div class="ai-controls">
+              <label class="form-label" for="ai-mode-select">模式</label>
+              <select id="ai-mode-select" class="form-select form-select-sm">
+                <option value="balanced" selected>按设备重要日志</option>
+                <option value="recent">当前最近日志</option>
+              </select>
+              <label class="form-label" for="ai-per-device-select">每设备</label>
+              <select id="ai-per-device-select" class="form-select form-select-sm">
+                <option value="10">10</option>
+                <option value="30" selected>30</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
             <button id="ai-btn" class="btn btn-sm btn-dark" type="button" disabled>AI 分析当前日志</button>
           </div>
-          <div id="ai-result" class="ai-result empty-cell">AI 只会分析当前筛选后的最近 N 行日志，并在发送前自动脱敏。</div>
+          <div id="ai-result" class="ai-result empty-cell">AI 默认按设备选取重要日志，并在发送前自动脱敏。</div>
         </div>
       </div>
     </section>

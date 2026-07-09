@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .ai_analyzer import AIAnalyzerError, MAX_AI_LINES, ai_status, analyze_logs_with_ai
+from .ai_analyzer import AIAnalyzerError, MAX_AI_LINES, ai_status, analyze_logs_with_ai, select_ai_entries
 from .analyzer import analyze_entries
 from .log_reader import (
     LogAccessError,
@@ -144,17 +144,28 @@ def api_ai_analyze(
     keyword: str | None = Query(default=None),
     device: str | None = Query(default=None),
     severity: str | None = Query(default=None, pattern="^(critical|error|warning|info)?$"),
+    ai_mode: str = Query(default="balanced", pattern="^(balanced|recent)$"),
+    per_device_limit: int = Query(default=30, ge=1, le=MAX_AI_LINES),
 ) -> dict[str, object]:
     try:
+        scan_limit = limit if ai_mode == "recent" else min(MAX_ANALYZE_LIMIT, max(2000, limit * 10))
         entries = reader.get_entries(
             file=file,
-            limit=limit,
+            limit=scan_limit,
             keyword=keyword,
             device=device,
             severity=severity,
             scan_multiplier=1,
         )
-        result = analyze_logs_with_ai(entries)
+        candidates = compact_entries(entries) if ai_mode == "balanced" else entries
+        selection = select_ai_entries(
+            candidates,
+            total_limit=limit,
+            per_device_limit=per_device_limit,
+            mode=ai_mode,
+        )
+        result = analyze_logs_with_ai(selection.entries)
+        result["selection"] = selection.metadata
     except LogAccessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIAnalyzerError as exc:

@@ -32,6 +32,8 @@ const els = {
   analysisList: document.querySelector("#analysis-list"),
   analysisCountText: document.querySelector("#analysis-count-text"),
   aiStatusText: document.querySelector("#ai-status-text"),
+  aiModeSelect: document.querySelector("#ai-mode-select"),
+  aiPerDeviceSelect: document.querySelector("#ai-per-device-select"),
   aiResult: document.querySelector("#ai-result"),
 };
 
@@ -240,15 +242,26 @@ async function loadAIAnalysis() {
   els.aiResult.textContent = "正在调用 AI 分析当前筛选日志...";
   els.aiBtn.disabled = true;
   try {
-    const data = await api("/api/ai-analyze", filters(true));
+    const params = filters(true);
+    params.ai_mode = els.aiModeSelect.value;
+    params.per_device_limit = els.aiPerDeviceSelect.value;
+    const data = await api("/api/ai-analyze", params);
     els.aiResult.classList.remove("empty-cell");
     els.aiResult.classList.add("has-content");
+    const selection = data.selection || {};
+    const deviceSummary = (selection.devices || [])
+      .filter((item) => Number(item.selected || 0) > 0)
+      .map((item) => `${item.device}: ${item.selected}/${item.available}`)
+      .join("，");
     els.aiResult.textContent = [
       `模型：${data.model || "-"}`,
       `发送日志行数：${data.sent_lines || 0}（已脱敏）`,
+      `选择模式：${selection.mode === "balanced" ? "按设备重要日志" : "当前最近日志"}`,
+      selection.mode === "balanced" ? `每设备最多：${selection.per_device_limit || "-"} 条` : "",
+      deviceSummary ? `设备覆盖：${deviceSummary}` : "",
       "",
       data.analysis || "AI 未返回内容",
-    ].join("\n");
+    ].filter(Boolean).join("\n");
   } catch (error) {
     showError(error);
     els.aiResult.classList.add("empty-cell");

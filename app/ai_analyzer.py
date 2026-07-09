@@ -11,6 +11,8 @@ from typing import Any
 
 MAX_AI_LINES = 1_000
 MAX_AI_CHARS = 40_000
+AI_MODE_BALANCED = "balanced"
+AI_MODE_RECENT = "recent"
 
 IPV4_RE = re.compile(r"\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b")
 IPV6_RE = re.compile(r"\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b")
@@ -31,6 +33,40 @@ SERIAL_RE = re.compile(
     r"(?P<value>[A-Za-z0-9][A-Za-z0-9._-]{4,})\b",
     re.IGNORECASE,
 )
+SEVERITY_SCORE = {
+    "critical": 400,
+    "error": 300,
+    "warning": 200,
+    "info": 100,
+}
+IMPORTANT_CATEGORY_SCORE = {
+    "kernel_crash": 120,
+    "watchdog": 110,
+    "reboot": 100,
+    "wan_down": 100,
+    "pppoe_down": 95,
+    "dhcp_failed": 90,
+    "dns_failed": 85,
+    "link_down": 85,
+    "port_flapping": 85,
+    "generic_error": 80,
+    "generic_warning": 50,
+    "auth_failed": 75,
+    "nas_login_failed": 70,
+    "nas_web_login_failed": 70,
+    "nas_storage_alert": 90,
+    "nas_transfer_failed": 65,
+    "nas_file_write": 10,
+    "nas_file_access": 5,
+    "nas_web_login_success": 5,
+    "nas_ssh_login_success": 20,
+}
+
+
+@dataclass(frozen=True)
+class AISelection:
+    entries: list[dict[str, object]]
+    metadata: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -97,7 +133,7 @@ def analyze_logs_with_ai(entries: list[dict[str, object]]) -> dict[str, object]:
             {
                 "role": "user",
                 "content": (
-                    "下面是用户在 Web 页面选择的最近 N 行 syslog，已经默认脱敏 IP、MAC、账号、SN、手机号。\n"
+                    "下面是用户在 Web 页面当前条件下选中的 syslog，已经默认脱敏 IP、MAC、账号、SN、手机号。\n"
                     "请按以下格式输出：\n"
                     "## 问题总结\n"
                     "- 用 3-6 条总结主要异常和影响范围。\n"
@@ -132,13 +168,149 @@ def analyze_logs_with_ai(entries: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
+def select_ai_entries(
+    entries: list[dict[str, object]],
+    total_limit: int,
+    per_device_limit: int,
+    mode: str = AI_MODE_BALANCED,
+) -> AISelection:
+    safe_total = max(1, min(total_limit, MAX_AI_LINES))
+    safe_per_device = max(1, min(per_device_limit, MAX_AI_LINES))
+    normalized_mode = mode if mode in {AI_MODE_BALANCED, AI_MODE_RECENT} else AI_MODE_BALANCED
+
+    if normalized_mode == AI_MODE_RECENT:
+        selected = entries[-safe_total:]
+        return AISelection(
+            entries=selected,
+            metadata={
+                "mode": AI_MODE_RECENT,
+                "scanned_lines": len(entries),
+                "candidate_lines": len(entries),
+                "selected_lines": len(selected),
+                "total_limit": safe_total,
+                "per_device_limit": safe_per_device,
+                "devices": device_selection_summary(selected, entries),
+            },
+        )
+
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for entry in entries:
+        device = str(entry.get("device") or "unknown")
+        grouped.setdefault(device, []).append(entry)
+
+    selected_by_device: list[dict[str, object]] = []
+    device_meta: list[dict[str, object]] = []
+    for device in sorted(grouped):
+        group = grouped[device]
+        ranked = sorted(group, key=importance_sort_key, reverse=True)
+        selected = ranked[:safe_per_device]
+        selected_by_device.extend(selected)
+        device_meta.append(
+            {
+                "device": device,
+                "available": len(group),
+                "selected": 0,
+                "highest_severity": highest_entry_severity(group),
+            }
+        )
+
+    selected_final = balanced_device_selection(selected_by_device, safe_total)
+    selected_final.sort(key=lambda item: (str(item.get("device") or ""), importance_sort_key(item)))
+    selected_counts: dict[str, int] = {}
+    for item in selected_final:
+        device = str(item.get("device") or "unknown")
+        selected_counts[device] = selected_counts.get(device, 0) + 1
+    for item in device_meta:
+        item["selected"] = selected_counts.get(str(item["device"]), 0)
+
+    return AISelection(
+        entries=selected_final,
+        metadata={
+            "mode": AI_MODE_BALANCED,
+            "scanned_lines": len(entries),
+            "candidate_lines": len(entries),
+            "selected_lines": len(selected_final),
+            "total_limit": safe_total,
+            "per_device_limit": safe_per_device,
+            "devices": device_meta,
+        },
+    )
+
+
+def balanced_device_selection(entries: list[dict[str, object]], total_limit: int) -> list[dict[str, object]]:
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for entry in entries:
+        grouped.setdefault(str(entry.get("device") or "unknown"), []).append(entry)
+    for group in grouped.values():
+        group.sort(key=importance_sort_key, reverse=True)
+
+    first_pass = [group[0] for group in grouped.values() if group]
+    first_pass.sort(key=importance_sort_key, reverse=True)
+    if len(first_pass) >= total_limit:
+        return first_pass[:total_limit]
+
+    selected = list(first_pass)
+    remaining: list[dict[str, object]] = []
+    for group in grouped.values():
+        remaining.extend(group[1:])
+    remaining.sort(key=importance_sort_key, reverse=True)
+    selected.extend(remaining[: max(0, total_limit - len(selected))])
+    return selected
+
+
+def importance_sort_key(entry: dict[str, object]) -> tuple[int, str, int]:
+    severity = str(entry.get("severity") or "info").lower()
+    categories = entry.get("categories")
+    category_list = categories if isinstance(categories, list) else [entry.get("category")]
+    category_score = max(
+        [IMPORTANT_CATEGORY_SCORE.get(str(category), 0) for category in category_list if category],
+        default=0,
+    )
+    repeat_bonus = min(int(entry.get("repeat_count") or 1), 20)
+    score = SEVERITY_SCORE.get(severity, 100) + category_score + repeat_bonus
+    return (score, str(entry.get("_timestamp_sort") or ""), int(entry.get("_order") or 0))
+
+
+def highest_entry_severity(entries: list[dict[str, object]]) -> str:
+    if not entries:
+        return "info"
+    return max(
+        (str(entry.get("severity") or "info") for entry in entries),
+        key=lambda severity: SEVERITY_SCORE.get(severity, 0),
+    )
+
+
+def device_selection_summary(
+    selected_entries: list[dict[str, object]],
+    all_entries: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    devices = sorted({str(entry.get("device") or "unknown") for entry in all_entries})
+    return [
+        {
+            "device": device,
+            "available": sum(1 for entry in all_entries if str(entry.get("device") or "unknown") == device),
+            "selected": sum(1 for entry in selected_entries if str(entry.get("device") or "unknown") == device),
+            "highest_severity": highest_entry_severity(
+                [entry for entry in all_entries if str(entry.get("device") or "unknown") == device]
+            ),
+        }
+        for device in devices
+    ]
+
+
 def build_sanitized_log_lines(entries: list[dict[str, object]]) -> list[str]:
     lines: list[str] = []
     for entry in entries[-MAX_AI_LINES:]:
+        repeat_count = int(entry.get("repeat_count") or 1)
+        time_text = entry.get("time") or "-"
+        if repeat_count > 1 and entry.get("first_time") and entry.get("last_time"):
+            time_text = f"{entry.get('first_time')}~{entry.get('last_time')}"
         parts = [
-            f"time={entry.get('time') or '-'}",
+            f"time={time_text}",
             f"device={entry.get('device') or '-'}",
             f"severity={entry.get('severity') or '-'}",
+            f"category={entry.get('category') or '-'}",
+            f"repeat_count={repeat_count}",
             f"summary={entry.get('chinese_summary') or '-'}",
             f"raw={entry.get('raw') or ''}",
         ]
