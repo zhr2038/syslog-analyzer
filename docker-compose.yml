@@ -1,0 +1,18 @@
+services:
+  syslog-analyzer:
+    build: .
+    container_name: syslog-analyzer
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=Asia/Shanghai
+      - LOG_ROOT=/logs
+      - RULES_FILE=/app/rules.yaml
+      - ENABLE_AI=${ENABLE_AI:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.deepseek.com}
+      - OPENAI_MODEL=${OPENAI_MODEL:-deepseek-v4-flash}
+      - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-90}
+    volumes:
+      - /volume1/docker/syslog/log:/logs:ro
+    restart: unless-stopped

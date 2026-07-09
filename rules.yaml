@@ -1,0 +1,413 @@
+rules:
+  - id: link_down
+    pattern: '\b(link|interface|port)\b.*\bdown\b|\bdown\b.*\b(link|interface|port)\b'
+    severity: warning
+    category: link_down
+    chinese_summary: 接口断开，网络链路可能中断
+    suggestion: 检查网线、光模块、端口状态、对端设备以及速率/双工协商
+
+  - id: link_up
+    pattern: '\b(link|interface|port)\b.*\bup\b|\bup\b.*\b(link|interface|port)\b'
+    severity: info
+    category: link_up
+    chinese_summary: 接口恢复，链路重新连通
+    suggestion: 结合前后日志确认是否存在频繁 up/down 抖动
+
+  - id: reboot_restart
+    pattern: '\b(reboot|rebooted|restart|restarted|system boot|booting)\b'
+    severity: error
+    category: reboot
+    chinese_summary: 设备出现重启或服务重启
+    suggestion: 检查是否为人工操作、计划任务、供电异常、资源耗尽或固件问题
+
+  - id: watchdog
+    pattern: '\bwatchdog\b'
+    severity: critical
+    category: watchdog
+    chinese_summary: 看门狗异常，可能是系统卡死后自动重启
+    suggestion: 检查重启前 CPU/内存/温度/内核日志，必要时升级固件或联系厂商
+
+  - id: kernel_crash
+    pattern: '\b(kernel panic|oops|crash|segfault|fatal exception)\b'
+    severity: critical
+    category: kernel_crash
+    chinese_summary: 系统内核或固件崩溃
+    suggestion: 保存完整崩溃日志，检查固件版本、硬件状态和崩溃前触发条件
+
+  - id: pppoe_down
+    pattern: '\bpppoe\b.*\b(down|disconnect|disconnected|failed|timeout)\b'
+    severity: error
+    category: pppoe_down
+    chinese_summary: PPPoE 拨号断开或拨号失败
+    suggestion: 检查运营商线路、光猫、账号密码、WAN 口状态和拨号认证日志
+
+  - id: dhcp_failed
+    pattern: '\bdhcp\b.*\b(fail|failed|timeout|no offer|nak|decline)\b'
+    severity: error
+    category: dhcp_failed
+    chinese_summary: DHCP 获取地址失败
+    suggestion: 检查 DHCP 服务器、地址池、VLAN、链路连通性和防火墙策略
+
+  - id: dns_failed
+    pattern: '\b(dns|resolver|resolve)\b.*\b(fail|failed|timeout|unreachable|servfail|nxdomain)\b'
+    severity: warning
+    category: dns_failed
+    chinese_summary: DNS 解析失败
+    suggestion: 测试 DNS 服务器连通性，检查 DNS 配置、外网链路和 53 端口策略
+
+  - id: authentication_failed
+    pattern: '\b(authentication|auth|login|password|ssh|radius|ldap)\b.*\b(fail|failed|failure|denied|invalid)\b'
+    severity: warning
+    category: auth_failed
+    chinese_summary: 认证失败，可能是账号密码错误或异常登录尝试
+    suggestion: 核对账号密码、认证服务器和来源 IP，对异常登录来源做限制
+
+  - id: authentication_success
+    pattern: '\b(accepted password|accepted publickey|login successful|session opened|authenticated|auth success)\b'
+    severity: info
+    category: auth_success
+    chinese_summary: 登录或认证成功
+    suggestion: 核对来源是否属于正常管理行为；如非预期登录，请检查账号权限和访问控制
+
+  - id: ssh_session_closed
+    pattern: '\b(sshd|ssh)\b.*\b(session closed|disconnected|connection closed|logout)\b'
+    severity: info
+    category: session_closed
+    chinese_summary: SSH 或管理会话已断开
+    suggestion: 通常为正常退出；如频繁断开，检查网络质量、空闲超时和客户端状态
+
+  - id: firewall_drop
+    pattern: '\b(firewall|iptables|nftables|kernel)\b.*\b(drop|dropped|deny|denied|reject|rejected|blocked)\b|\b(IN=.*OUT=.*(DROP|REJECT|DENY))\b'
+    severity: warning
+    category: firewall_drop
+    chinese_summary: 防火墙拦截或丢弃了连接/数据包
+    suggestion: 核对源/目的地址、端口、协议和安全策略，确认是正常拦截还是误拦业务流量
+
+  - id: firewall_allow
+    pattern: '\b(firewall|iptables|nftables)\b.*\b(allow|allowed|accept|accepted|pass)\b'
+    severity: info
+    category: firewall_allow
+    chinese_summary: 防火墙允许了连接或数据包通过
+    suggestion: 通常为策略命中记录；如日志量过大，可调整日志级别或策略记录范围
+
+  - id: dhcp_lease
+    pattern: '\b(dhcp|dhcpd|dnsmasq)\b.*\b(lease|bound|renew|renewed|assigned|offer|ack|dhcpack|dhcpoffer)\b|\b(DHCPACK|DHCPOFFER|DHCPREQUEST|DHCPDISCOVER)\b'
+    severity: info
+    category: dhcp_lease
+    chinese_summary: DHCP 地址分配、续租或确认成功
+    suggestion: 通常为正常地址租约记录；如客户端反复续租，检查租期、地址池和链路稳定性
+
+  - id: dhcp_pool_exhausted
+    pattern: '\b(dhcp|dhcpd|dnsmasq)\b.*\b(no free leases|pool exhausted|address pool exhausted|no addresses available)\b'
+    severity: error
+    category: dhcp_pool_exhausted
+    chinese_summary: DHCP 地址池耗尽或没有可用地址
+    suggestion: 扩大地址池、缩短租期、清理异常租约，并检查是否有异常客户端大量占用地址
+
+  - id: dns_service_record
+    pattern: '\b(dnsmasq|named|unbound|resolver)\b.*\b(started|cached|query|reply|forwarded|config|using nameserver)\b'
+    severity: info
+    category: dns_service
+    chinese_summary: DNS 服务运行、查询、缓存或转发记录
+    suggestion: 通常为正常解析日志；如伴随失败或超时，请检查上游 DNS 和网络连通性
+
+  - id: ntp_sync
+    pattern: '\b(ntp|ntpd|chrony|timesync|time sync)\b.*\b(sync|synchronized|adjust|stepped|selected source)\b'
+    severity: info
+    category: ntp_sync
+    chinese_summary: 时间同步成功或系统时间被校准
+    suggestion: 通常为正常 NTP 校时；如时间跳变较大，检查时区、RTC 和上游时间源
+
+  - id: ntp_failed
+    pattern: '\b(ntp|ntpd|chrony|timesync|time sync)\b.*\b(fail|failed|timeout|unreachable|no server|unsynchronized)\b'
+    severity: warning
+    category: ntp_failed
+    chinese_summary: 时间同步失败或上游时间源不可达
+    suggestion: 检查 NTP 服务器地址、UDP 123 连通性、防火墙策略和设备系统时间
+
+  - id: vpn_down
+    pattern: '\b(vpn|openvpn|wireguard|ipsec|strongswan|l2tp|pptp)\b.*\b(down|disconnect|disconnected|failed|timeout|auth failed)\b'
+    severity: error
+    category: vpn_down
+    chinese_summary: VPN 隧道断开、认证失败或协商失败
+    suggestion: 检查对端地址、密钥/证书、账号、路由、NAT 穿越和 UDP/TCP 端口连通性
+
+  - id: vpn_up
+    pattern: '\b(vpn|openvpn|wireguard|ipsec|strongswan|l2tp|pptp)\b.*\b(up|connected|established|handshake|tunnel established)\b'
+    severity: info
+    category: vpn_up
+    chinese_summary: VPN 隧道已连接或握手成功
+    suggestion: 通常为正常连接记录；如反复 up/down，请检查链路抖动和对端稳定性
+
+  - id: wifi_client_connected
+    pattern: '\b(wifi|wlan|wireless|hostapd)\b.*\b(associated|authenticated|connected|station joined)\b'
+    severity: info
+    category: wifi_client_connected
+    chinese_summary: 无线客户端已连接或认证成功
+    suggestion: 通常为正常 Wi-Fi 接入记录；如同一终端频繁重连，检查信号强度和漫游策略
+
+  - id: wifi_client_disconnected
+    pattern: '\b(wifi|wlan|wireless|hostapd)\b.*\b(disassociated|deauthenticated|disconnected|station left|reason=)\b'
+    severity: warning
+    category: wifi_client_disconnected
+    chinese_summary: 无线客户端断开或被去认证
+    suggestion: 检查无线信号、干扰、漫游阈值、加密方式和客户端兼容性
+
+  - id: arp_or_ip_conflict
+    pattern: '\b(arp conflict|duplicate address|duplicate ip|ip conflict|address conflict|gratuitous arp conflict)\b'
+    severity: error
+    category: ip_conflict
+    chinese_summary: 检测到 IP 地址冲突或 ARP 冲突
+    suggestion: 查找冲突终端，核对 DHCP 静态绑定、手工 IP 配置和地址池范围
+
+  - id: interface_error_counter
+    pattern: '\b(crc|collisions?|rx error|tx error|input error|output error|carrier lost|no carrier|duplex mismatch|speed mismatch)\b'
+    severity: warning
+    category: interface_error
+    chinese_summary: 接口错误计数或链路协商异常
+    suggestion: 检查网线/光模块、端口速率双工、对端接口错误计数和物理层质量
+
+  - id: route_change
+    pattern: '\b(route|gateway|routing)\b.*\b(add|added|delete|deleted|change|changed|unreachable|no route)\b'
+    severity: warning
+    category: route_change
+    chinese_summary: 路由或网关发生变化，可能影响转发路径
+    suggestion: 核对默认网关、策略路由、动态路由邻居和变更时间是否符合预期
+
+  - id: service_started
+    pattern: '\b(started|starting|initialized|initializing|init|init complete|ready|listening|daemon started|service started)\b'
+    severity: info
+    category: service_lifecycle
+    chinese_summary: 服务启动、初始化完成或开始监听
+    suggestion: 通常为正常服务生命周期日志；如伴随重启或失败，继续查看前后文
+
+  - id: service_stopped
+    pattern: '\b(stopped|stopping|exited|exit status|terminated|daemon stopped|service stopped)\b'
+    severity: warning
+    category: service_lifecycle
+    chinese_summary: 服务停止、退出或被终止
+    suggestion: 确认是否为计划重启或人工操作；如异常退出，查看退出码和前后错误日志
+
+  - id: service_failed
+    pattern: '\b(service|daemon|process|systemd)\b.*\b(fail|failed|crash|crashed|core dumped|exit code|restart limit)\b'
+    severity: error
+    category: service_failed
+    chinese_summary: 服务或进程运行失败/崩溃
+    suggestion: 查看服务退出码、依赖配置、资源占用和崩溃前的错误日志
+
+  - id: config_changed
+    pattern: '\b(config|configuration|setting|nvram|uci)\b.*\b(changed|updated|committed|saved|applied|loaded|reload)\b'
+    severity: info
+    category: config_change
+    chinese_summary: 配置被加载、保存、应用或变更
+    suggestion: 核对变更来源和时间；若问题随后出现，优先回查该配置变更
+
+  - id: firmware_update
+    pattern: '\b(firmware|upgrade|update|image)\b.*\b(start|started|success|succeeded|complete|completed|fail|failed)\b'
+    severity: warning
+    category: firmware_update
+    chinese_summary: 固件升级、镜像更新或升级状态记录
+    suggestion: 确认升级是否完成、版本是否正确；升级失败时不要断电，按厂商流程恢复
+
+  - id: usb_storage_event
+    pattern: '\b(usb|sd[a-z]|mmcblk|storage)\b.*\b(attached|detached|mounted|unmounted|reset|disconnect|I/O error)\b'
+    severity: warning
+    category: storage_device
+    chinese_summary: USB/磁盘设备挂载、断开或 I/O 异常
+    suggestion: 检查外接存储、电源、线缆、文件系统健康状态和磁盘坏块
+
+  - id: memory_pressure
+    pattern: '\b(out of memory|oom|killed process|memory allocation failed|low memory)\b'
+    severity: critical
+    category: memory_pressure
+    chinese_summary: 内存不足或进程被 OOM 终止
+    suggestion: 检查内存占用最高的进程、是否有内存泄漏，必要时降低负载或重启异常服务
+
+  - id: cpu_high
+    pattern: '\b(cpu|load average|soft lockup|hung task)\b.*\b(high|overload|stuck|blocked|lockup|hung)\b'
+    severity: warning
+    category: cpu_pressure
+    chinese_summary: CPU 负载过高、任务卡住或系统响应变慢
+    suggestion: 查看高 CPU 进程、中断/软中断、异常流量和最近配置变更
+
+  - id: high_temperature
+    pattern: '\b(thermal|temperature|temp)\b.*\b(high|hot|over|alarm|critical|warning)\b|\b(high temperature|overheat|overheated)\b'
+    severity: critical
+    category: hardware_temperature
+    chinese_summary: 温度异常，设备散热或环境可能有问题
+    suggestion: 检查机柜温度、风道、灰尘、风扇状态和设备负载
+
+  - id: fan_or_power
+    pattern: '\b(fan|power|psu|power supply)\b.*\b(fail|failed|failure|alarm|lost|bad|warning|critical)\b'
+    severity: critical
+    category: hardware_fan_power
+    chinese_summary: 风扇或电源异常
+    suggestion: 检查风扇转速、电源模块、UPS、插座和供电线路
+
+  - id: wan_down
+    pattern: '\bwan\b.*\b(down|disconnect|disconnected|offline|fail|failed)\b'
+    severity: error
+    category: wan_down
+    chinese_summary: 外网 WAN 链路断开
+    suggestion: 检查 WAN 口物理链路、光猫/上级设备、运营商线路和拨号/DHCP 状态
+
+  - id: port_flapping
+    pattern: '\b(flapping|flap|link flap|port flap)\b'
+    severity: warning
+    category: port_flapping
+    chinese_summary: 接口频繁 up/down，疑似链路抖动
+    suggestion: 检查线缆、光模块、端口协商、对端设备和接口错误计数
+
+  - id: packet_loss_timeout
+    pattern: '\b(packet loss|timeout|timed out|unreachable)\b'
+    severity: warning
+    category: connectivity_warning
+    chinese_summary: 连接超时或不可达，可能存在丢包或网络中断
+    suggestion: 检查链路质量、路由、防火墙策略和上游网络状态
+
+  - id: connection_refused_reset
+    pattern: '\b(connection refused|connection reset|reset by peer|broken pipe|tls handshake timeout|ssl error|certificate verify failed)\b'
+    severity: warning
+    category: connection_error
+    chinese_summary: 连接被拒绝、重置或 TLS/证书握手异常
+    suggestion: 检查目标服务是否监听、端口策略、证书有效性、代理和链路稳定性
+
+  - id: disk_full
+    pattern: '\b(no space left|disk full|filesystem full|read-only file system)\b'
+    severity: error
+    category: storage_error
+    chinese_summary: 存储空间或文件系统异常
+    suggestion: 清理日志/缓存，检查磁盘健康状态和文件系统挂载状态
+
+  - id: nas_smb_audit_failed
+    pattern: '\b(smbd_audit|samba|smb)\b.*\|fail\|'
+    severity: warning
+    category: nas_operation_failed
+    chinese_summary: NAS 共享文件操作失败
+    suggestion: 检查用户名、来源 IP、共享权限、文件路径、ACL 权限和磁盘/配额状态
+
+  - id: nas_smb_audit_ok
+    pattern: '\b(smbd_audit|samba|smb)\b.*\|ok\|'
+    severity: info
+    category: nas_operation
+    chinese_summary: NAS 共享文件操作成功
+    suggestion: 用于审计用户、来源 IP、操作类型和文件路径；异常高频时检查是否有批量任务或异常客户端
+
+  - id: nas_smb_service
+    pattern: '\b(smbd|nmbd|winbindd|samba)\b.*\b(connect|disconnect|session|tree connect|share|denied|failed|error|closed)\b'
+    severity: warning
+    category: nas_smb_service
+    chinese_summary: NAS SMB/文件共享服务连接或访问事件
+    suggestion: 核对客户端、共享名、账号权限和 SMB 服务状态；失败时检查 ACL 与网络连通性
+
+  - id: nas_login_failed
+    pattern: '\b(ug_login|login|sshd|pam|auth)\b.*\b(fail|failed|failure|denied|invalid|locked)\b'
+    severity: warning
+    category: nas_login_failed
+    chinese_summary: NAS 登录或认证失败
+    suggestion: 检查账号密码、来源 IP、登录方式、账号锁定策略和是否存在异常登录尝试
+
+  - id: nas_login_success
+    pattern: '\b(ug_login|sshd|pam|login)\b.*\b(accepted|success|successful|session opened|login ok)\b'
+    severity: info
+    category: nas_login_success
+    chinese_summary: NAS 登录或认证成功
+    suggestion: 用于审计管理员或用户登录；如来源异常，请及时修改密码并限制访问来源
+
+  - id: nas_admin_command
+    pattern: '\b(sudo|su)\b.*\b(USER=|COMMAND=|session opened|session closed|pam_unix|authentication)\b'
+    severity: info
+    category: nas_admin_command
+    chinese_summary: NAS 管理员提权或执行维护命令
+    suggestion: 用于审计谁通过 sudo/su 执行了维护操作；如命令涉及配置、账号、共享或服务，请结合前后日志确认变更影响
+
+  - id: nas_config_change_failed
+    pattern: '\b(conf_tool|ugos_serv|ctl_serv|entry_serv|filemgr_serv|app_serv|taskmgr_serv|sudo|su)\b.*\b(config|configuration|setting|settings|share|permission|acl|quota|user|group|password|network|service|firewall|volume)\b.*\b(fail|failed|failure|error|denied|invalid|rollback)\b'
+    severity: warning
+    category: nas_config_failed
+    chinese_summary: NAS 配置、共享、权限或账号变更失败
+    suggestion: 检查操作者、变更对象、权限、参数是否合法；失败后确认配置是否已回滚或部分生效
+
+  - id: nas_config_change
+    pattern: '\b(conf_tool|ugos_serv|ctl_serv|entry_serv|filemgr_serv|app_serv|taskmgr_serv|sudo|su)\b.*\b(config|configuration|setting|settings|share|permission|acl|quota|user|group|password|network|service|firewall|volume)\b.*\b(change|changed|update|updated|set|save|saved|apply|applied|modify|modified|delete|deleted|create|created|enable|enabled|disable|disabled|reload|restart)\b'
+    severity: info
+    category: nas_config_change
+    chinese_summary: NAS 配置、共享、权限、账号或服务设置发生变更
+    suggestion: 用于审计谁在什么时间修改了 NAS 配置；若变更后出现异常，请优先回查这条记录和同时间窗口日志
+
+  - id: nas_transfer_failed
+    pattern: '\b(syncbackup_serv|syncspace|xunlei_serv|xunlei|rsync|rclone|webdav|sftp|ftp|upload|download|transfer|backup|sync)\b.*\b(fail|failed|failure|error|timeout|stalled|abort|aborted|EOF|denied)\b'
+    severity: error
+    category: nas_transfer_failed
+    chinese_summary: NAS 传输、同步、下载或备份任务失败
+    suggestion: 检查源/目标路径权限、网络连通性、剩余空间、任务配置、远端服务和重试日志
+
+  - id: nas_transfer_event
+    pattern: '\b(syncbackup_serv|syncspace|xunlei_serv|xunlei|rsync|rclone|webdav|sftp|ftp|upload|download|transfer|backup|sync)\b.*\b(start|started|complete|completed|success|finished|progress|upload|download|sync|backup)\b'
+    severity: info
+    category: nas_transfer
+    chinese_summary: NAS 传输、同步、下载或备份任务状态
+    suggestion: 用于跟踪任务开始、进度和完成情况；若长期无完成日志，检查任务是否卡住
+
+  - id: nas_storage_alert
+    pattern: '\b(storage_serv|storage_serv_ugvolume|storagemgr|mdadm|raid|array|btrfs|ext4|disk|volume|smart|nvme|sata|bad sector|I/O error|degraded|resync|rebuild)\b.*\b(error|fail|failed|warning|warn|degraded|bad|readonly|read-only|lost|offline|fault|rebuild|resync)\b|\b(raid|array)\b.*\b(degraded|rebuild|resync)\b'
+    severity: warning
+    category: nas_storage_alert
+    chinese_summary: NAS 存储、磁盘、卷或 RAID 状态异常
+    suggestion: 检查存储管理器、磁盘 SMART、RAID/阵列状态、卷挂载状态和最近是否有硬盘掉线
+
+  - id: nas_storage_event
+    pattern: '\b(storage_serv|storage_serv_ugvolume|storagemgr|mdadm|raid|array|btrfs|ext4|disk|volume|smart|nvme|sata)\b.*\b(start|started|finish|finished|complete|completed|mount|mounted|unmount|resync|rebuild|online)\b'
+    severity: info
+    category: nas_storage
+    chinese_summary: NAS 存储、磁盘、卷或 RAID 状态变化
+    suggestion: 关注是否为计划内挂载、重建或同步；如伴随 warning/error，请优先检查磁盘健康
+
+  - id: nas_ups_ignore_notice
+    pattern: '\b(usbhid-ups|ups)\b.*\b(ignore this error|ignore)\b'
+    severity: info
+    category: nas_ups_notice
+    chinese_summary: UPS 驱动忽略了非目标设备或可忽略错误
+    suggestion: 通常不影响 NAS；如频繁出现且 UPS 状态不可读，再检查 USB 连接、NUT/UPS 配置和设备兼容性
+
+  - id: nas_ups_alert
+    pattern: '\b(usbhid-ups|ups|battery)\b(?!.*\bignore\b).*\b(error|fail|failed|low|lost|on battery|shutdown|critical|unavailable)\b'
+    severity: warning
+    category: nas_ups_alert
+    chinese_summary: NAS UPS、电池或供电状态异常
+    suggestion: 检查 UPS USB 连接、电池状态、市电输入、NUT 服务和自动关机策略
+
+  - id: nas_container_failed
+    pattern: '\b(docker_serv|dockerd|containerd|docker|container|compose)\b.*\b(fail|failed|error|exited|unhealthy|restart|denied|pull failed)\b'
+    severity: warning
+    category: nas_container_alert
+    chinese_summary: NAS Docker/容器运行异常
+    suggestion: 检查容器状态、镜像拉取、端口占用、volume 权限、重启策略和容器日志
+
+  - id: nas_container_event
+    pattern: '\b(docker_serv|dockerd|containerd|docker|container|compose)\b.*\b(start|started|stop|stopped|create|created|pull|pulled|remove|removed|restart)\b'
+    severity: info
+    category: nas_container
+    chinese_summary: NAS Docker/容器操作事件
+    suggestion: 用于审计容器创建、启动、停止、拉取或删除；异常变更时检查操作来源和 compose 配置
+
+  - id: generic_error
+    pattern: '\b(error|err|failed|failure|fatal|denied|refused|cannot|unable|invalid|aborted)\b'
+    severity: error
+    category: generic_error
+    chinese_summary: 发现错误关键词，表示某个操作、连接或服务处理失败
+    suggestion: 结合进程名、设备名和前后日志定位失败对象；优先查配置、权限、连通性和资源状态
+
+  - id: generic_warning
+    pattern: '\b(warn|warning|timeout|retry|retries|deprecated|unstable|slow|missed|lost)\b'
+    severity: warning
+    category: generic_warning
+    chinese_summary: 发现告警或超时关键词，可能表示性能下降、重试或临时异常
+    suggestion: 观察是否持续出现；如重复发生，结合时间窗口检查链路、服务负载和上游依赖
+
+  - id: general_event
+    pattern: '.*'
+    severity: info
+    category: general_event
+    chinese_summary: 普通系统运行日志，当前没有识别为明确故障
+    suggestion: 通常无需处理；如同类日志高频重复或与故障时间重合，请结合上下文继续分析

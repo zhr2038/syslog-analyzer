@@ -1,0 +1,309 @@
+:root {
+  --page-bg: #f5f7fb;
+  --panel-bg: #ffffff;
+  --line: #dfe5ef;
+  --text: #172033;
+  --muted: #667085;
+  --blue: #2563eb;
+  --green: #16885a;
+  --amber: #b7791f;
+  --red: #c03535;
+  --purple: #6f42c1;
+}
+
+body {
+  background: var(--page-bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.navbar-brand {
+  letter-spacing: 0;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #a8b0bf;
+}
+
+.status-dot.ok {
+  background: var(--green);
+}
+
+.status-dot.bad {
+  background: var(--red);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card,
+.toolbar,
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.metric-card {
+  padding: 18px;
+  min-height: 120px;
+}
+
+.metric-label,
+.form-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.metric-value {
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 750;
+  margin-top: 10px;
+}
+
+.metric-foot {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 10px;
+}
+
+.latest-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 12px;
+  min-height: 44px;
+}
+
+.toolbar {
+  padding: 16px;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(420px, 0.7fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-header h2 {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 750;
+}
+
+.panel-header p {
+  color: var(--muted);
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.table {
+  --bs-table-hover-bg: #f7faff;
+}
+
+.table th {
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 750;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+.table td {
+  vertical-align: top;
+}
+
+.time-col {
+  width: 164px;
+}
+
+.device-col {
+  width: 130px;
+}
+
+.severity-col {
+  width: 92px;
+}
+
+.summary-col {
+  width: 260px;
+}
+
+.raw-log {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #1f2937;
+}
+
+.badge-severity {
+  font-size: 11px;
+  font-weight: 750;
+  border-radius: 999px;
+  padding: 5px 8px;
+}
+
+.sev-critical {
+  color: #fff;
+  background: #9f1239;
+}
+
+.sev-error {
+  color: #fff;
+  background: var(--red);
+}
+
+.sev-warning {
+  color: #4d2c00;
+  background: #f5c76b;
+}
+
+.sev-info {
+  color: #0f3e6b;
+  background: #dbeafe;
+}
+
+.analysis-list {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.ai-box {
+  border-top: 1px solid var(--line);
+}
+
+.ai-header {
+  align-items: center;
+}
+
+.ai-result {
+  margin: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcff;
+  min-height: 120px;
+}
+
+.ai-result.has-content {
+  text-align: left;
+  color: var(--text);
+  padding: 14px !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.65;
+}
+
+.issue {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.issue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.issue-title {
+  font-size: 15px;
+  font-weight: 750;
+  margin: 0;
+}
+
+.issue-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.issue-section {
+  margin-top: 10px;
+}
+
+.issue-section strong {
+  display: block;
+  font-size: 12px;
+  color: #344054;
+  margin-bottom: 4px;
+}
+
+.issue-section ul {
+  padding-left: 18px;
+  margin: 0;
+}
+
+.issue-section li {
+  margin-bottom: 3px;
+}
+
+.related-log {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  margin-top: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.empty-cell {
+  text-align: center;
+  color: var(--muted);
+  padding: 28px !important;
+}
+
+@media (max-width: 1200px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .container-fluid {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-header {
+    display: block;
+  }
+
+  .metric-value {
+    font-size: 30px;
+  }
+}

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Syslog 日志分析</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/styles.css" rel="stylesheet">
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+    <div class="container-fluid px-4">
+      <span class="navbar-brand fw-semibold">Syslog 日志分析</span>
+      <div class="d-flex align-items-center gap-2 small text-secondary">
+        <span id="health-dot" class="status-dot"></span>
+        <span id="health-text">检查服务中</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container-fluid px-4 py-4">
+    <section class="summary-grid mb-4">
+      <div class="metric-card">
+        <div class="metric-label">今日日志总数</div>
+        <div id="today-count" class="metric-value">-</div>
+        <div id="scan-count" class="metric-foot">最近扫描 - 行</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">错误/告警数量</div>
+        <div id="alert-count" class="metric-value text-danger">-</div>
+        <div class="metric-foot">critical / error / warning</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">检测到的问题数量</div>
+        <div id="problem-count" class="metric-value text-warning-emphasis">-</div>
+        <div id="rules-count" class="metric-foot">规则 - 条</div>
+      </div>
+      <div class="metric-card latest-card">
+        <div class="metric-label">最新严重问题</div>
+        <div id="latest-title" class="latest-title">暂无</div>
+        <div id="latest-meta" class="metric-foot">等待分析结果</div>
+      </div>
+    </section>
+
+    <section class="toolbar mb-4">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-xl-3 col-lg-4">
+          <label for="file-select" class="form-label">日志文件</label>
+          <select id="file-select" class="form-select">
+            <option value="">全部日志</option>
+          </select>
+        </div>
+        <div class="col-6 col-xl-2 col-lg-3">
+          <label for="device-select" class="form-label">设备</label>
+          <select id="device-select" class="form-select">
+            <option value="">全部设备</option>
+          </select>
+        </div>
+        <div class="col-6 col-xl-2 col-lg-2">
+          <label for="severity-select" class="form-label">严重级别</label>
+          <select id="severity-select" class="form-select">
+            <option value="">全部</option>
+            <option value="critical">critical</option>
+            <option value="error">error</option>
+            <option value="warning">warning</option>
+            <option value="info">info</option>
+          </select>
+        </div>
+        <div class="col-6 col-xl-1 col-lg-2">
+          <label for="limit-select" class="form-label">行数</label>
+          <select id="limit-select" class="form-select">
+            <option value="100">100</option>
+            <option value="500" selected>500</option>
+            <option value="1000">1000</option>
+          </select>
+        </div>
+        <div class="col-12 col-xl-2 col-lg-5">
+          <label for="keyword-input" class="form-label">关键词</label>
+          <input id="keyword-input" class="form-control" placeholder="例如 pppoe、wan、failed">
+        </div>
+        <div class="col-12 col-xl-2 col-lg-3 d-grid d-sm-flex gap-2">
+          <button id="refresh-btn" class="btn btn-primary flex-fill" type="button">刷新日志</button>
+          <button id="analyze-btn" class="btn btn-outline-primary flex-fill" type="button">重新分析</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="error-box" class="alert alert-danger d-none" role="alert"></div>
+
+    <section class="content-grid">
+      <div class="panel logs-panel">
+        <div class="panel-header">
+          <div>
+            <h2>日志明细</h2>
+            <p id="log-count-text">尚未加载</p>
+          </div>
+          <span class="text-secondary small">按时间排序，显示最近匹配项</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                <th class="time-col">时间</th>
+                <th class="device-col">设备</th>
+                <th class="severity-col">级别</th>
+                <th class="summary-col">中文解释</th>
+                <th>原始日志</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body">
+              <tr><td colspan="5" class="empty-cell">正在加载日志...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel analysis-panel">
+        <div class="panel-header">
+          <div>
+            <h2>自动分析结果</h2>
+            <p id="analysis-count-text">尚未分析</p>
+          </div>
+        </div>
+        <div id="analysis-list" class="analysis-list">
+          <div class="empty-cell">正在分析问题...</div>
+        </div>
+        <div class="ai-box">
+          <div class="panel-header ai-header">
+            <div>
+              <h2>AI 分析</h2>
+              <p id="ai-status-text">检查 AI 配置中</p>
+            </div>
+            <button id="ai-btn" class="btn btn-sm btn-dark" type="button" disabled>AI 分析当前日志</button>
+          </div>
+          <div id="ai-result" class="ai-result empty-cell">AI 只会分析当前筛选后的最近 N 行日志，并在发送前自动脱敏。</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
