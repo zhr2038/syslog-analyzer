@@ -14,6 +14,7 @@ const els = {
   deviceSelect: document.querySelector("#device-select"),
   severitySelect: document.querySelector("#severity-select"),
   limitSelect: document.querySelector("#limit-select"),
+  compactCheck: document.querySelector("#compact-check"),
   keywordInput: document.querySelector("#keyword-input"),
   refreshBtn: document.querySelector("#refresh-btn"),
   analyzeBtn: document.querySelector("#analyze-btn"),
@@ -84,6 +85,7 @@ function filters(includeSeverity = true) {
     limit: els.limitSelect.value,
     keyword: els.keywordInput.value.trim(),
     device: els.deviceSelect.value,
+    compact: els.compactCheck.checked,
   };
   if (includeSeverity) {
     params.severity = els.severitySelect.value;
@@ -167,7 +169,12 @@ async function loadSummary() {
 async function loadLogs() {
   els.logsBody.innerHTML = '<tr><td colspan="5" class="empty-cell">正在加载日志...</td></tr>';
   const data = await api("/api/logs", filters(true));
-  els.logCountText.textContent = `显示 ${data.count || 0} 条日志`;
+  const rawCount = data.raw_count ?? data.count ?? 0;
+  if (data.compacted && rawCount !== data.count) {
+    els.logCountText.textContent = `显示 ${data.count || 0} 条合并日志，来自 ${rawCount} 条原始日志`;
+  } else {
+    els.logCountText.textContent = `显示 ${data.count || 0} 条日志`;
+  }
 
   if (!data.entries || data.entries.length === 0) {
     els.logsBody.innerHTML = '<tr><td colspan="5" class="empty-cell">没有匹配的日志</td></tr>';
@@ -176,13 +183,39 @@ async function loadLogs() {
 
   els.logsBody.innerHTML = data.entries.map((entry) => {
     return `<tr>
-      <td>${escapeHtml(entry.time || "-")}</td>
+      <td>${renderTime(entry)}</td>
       <td>${escapeHtml(entry.device || "-")}</td>
       <td>${severityBadge(entry.severity)}</td>
-      <td>${escapeHtml(entry.chinese_summary || "-")}</td>
-      <td><div class="raw-log">${escapeHtml(entry.raw || "")}</div></td>
+      <td>${renderSummary(entry)}</td>
+      <td>${renderRawLog(entry)}</td>
     </tr>`;
   }).join("");
+}
+
+function renderTime(entry) {
+  if (entry.grouped && entry.first_time && entry.last_time && entry.first_time !== entry.last_time) {
+    return `<div>${escapeHtml(entry.first_time)}</div><div class="time-range">${escapeHtml(entry.last_time)}</div>`;
+  }
+  return escapeHtml(entry.time || "-");
+}
+
+function renderSummary(entry) {
+  const summary = escapeHtml(entry.chinese_summary || "-");
+  if (!entry.grouped || Number(entry.repeat_count || 1) <= 1) {
+    return summary;
+  }
+  return `<div>${summary}</div><span class="repeat-pill">合并 ${Number(entry.repeat_count)} 条</span>`;
+}
+
+function renderRawLog(entry) {
+  if (!entry.grouped || !entry.raw_samples || entry.raw_samples.length === 0) {
+    return `<div class="raw-log">${escapeHtml(entry.raw || "")}</div>`;
+  }
+  const sourceFiles = (entry.source_files || []).filter(Boolean).join(", ");
+  const samples = entry.raw_samples.map((item) => {
+    return `<div class="raw-sample">${escapeHtml(item)}</div>`;
+  }).join("");
+  return `<div class="compact-meta">连续近似日志 · ${Number(entry.repeat_count || 0)} 条${sourceFiles ? ` · ${escapeHtml(sourceFiles)}` : ""}</div>${samples}`;
 }
 
 async function loadAnalysis() {
@@ -303,6 +336,7 @@ els.fileSelect.addEventListener("change", refreshAll);
 els.deviceSelect.addEventListener("change", refreshLogsOnly);
 els.severitySelect.addEventListener("change", refreshLogsOnly);
 els.limitSelect.addEventListener("change", refreshLogsOnly);
+els.compactCheck.addEventListener("change", refreshLogsOnly);
 els.keywordInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     refreshLogsOnly();

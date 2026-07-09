@@ -12,17 +12,20 @@
 - 希望把英文/原始设备日志翻译成中文。
 - 希望自动识别常见问题，例如链路抖动、WAN/PPPoE/DHCP/DNS 异常、异常重启、认证失败、内核崩溃、NAS 存储告警等。
 - 希望保留 NAS 审计：谁 SSH 登录、谁执行管理命令、谁改了 NAS 配置、谁访问了哪个共享文件。
+- 希望直接读取 UGREEN NAS “日志中心”的 SQLite 记录，包括登录、控制面板、Samba 连接和文件传输/写入记录。
 
 ## 主要功能
 
 - 日志文件列表：支持 `messages`、`messages-kv.log`、`remote/<设备名>/<日期>.log`。
-- 日志明细表：显示时间、设备、级别、中文解释、原始日志。
+- 日志明细表：显示时间、设备、级别、中文解释、原始日志；默认合并连续近似日志，降低刷屏。
 - 查询过滤：支持最近 `100 / 500 / 1000` 行、关键词、设备名、严重级别。
 - 自动分析：输出问题标题、严重级别、时间范围、涉及设备、相关原始日志、中文解释、可能原因、建议处理步骤。
 - 规则库：所有识别规则集中在 `rules.yaml`，方便后续维护。
 - 可选 AI 分析：启用后可调用 OpenAI 兼容接口，例如 `deepseek-v4-flash`。
-- 安全读取：防止路径穿越，只允许读取容器内 `/logs`。
+- 安全读取：防止路径穿越，只允许读取容器内 `/logs` 和可选的 `/nas-log-center`。
+- NAS 日志中心：可只读挂载 `/var/lib/log_serv`，在页面中作为 `nas-log-center/log_server_record.db` 和 `nas-log-center/transfer_log.db` 两个虚拟日志源查询。
 - NAS 自噪声过滤：默认不显示直接引用 `/volume1/docker/syslog*` 相关目录的自维护日志，避免分析器自己的项目目录刷屏。
+- 日志保留策略：提供 syslog-ng 落盘目录的定期压缩、归档和过期清理脚本。
 
 ## 项目结构
 
@@ -34,7 +37,12 @@
 │   ├── analyzer.py
 │   ├── log_reader.py
 │   ├── main.py
+│   ├── nas_log_center.py
 │   └── rules_engine.py
+├── ops/
+│   ├── syslog-retention.sh
+│   ├── syslog-retention.service
+│   └── syslog-retention.timer
 ├── static/
 │   ├── app.js
 │   ├── index.html
@@ -105,6 +113,9 @@ services:
       - TZ=Asia/Shanghai
       - LOG_ROOT=/logs
       - RULES_FILE=/app/rules.yaml
+      - ENABLE_NAS_LOG_CENTER=${ENABLE_NAS_LOG_CENTER:-true}
+      - NAS_LOG_CENTER_DIR=${NAS_LOG_CENTER_DIR:-/nas-log-center}
+      - NAS_LOG_CENTER_DEVICE=${NAS_LOG_CENTER_DEVICE:-NAS}
       - ENABLE_AI=${ENABLE_AI:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.deepseek.com}
@@ -112,6 +123,7 @@ services:
       - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-90}
     volumes:
       - /volume1/docker/syslog/log:/logs:ro
+      - /var/lib/log_serv:/nas-log-center:ro
     restart: unless-stopped
 ```
 
@@ -209,8 +221,10 @@ docker compose restart syslog-analyzer
 NAS 审计与运维：
 
 - SMB 文件访问成功/失败
+- 日志中心里的 Samba 连接、读取、写入、创建、删除、重命名
 - SMB/Samba 服务连接异常
-- NAS 登录成功/失败
+- NAS SSH 登录成功
+- NAS Web/客户端登录成功/失败
 - SSH 会话断开
 - sudo/su 管理命令
 - NAS 配置、共享、权限、账号、服务变更
@@ -252,6 +266,7 @@ GET /health
 GET /api/files
 GET /api/logs?file=messages&limit=500&keyword=pppoe
 GET /api/logs?file=remote/router/2026-07-09.log&limit=1000&device=router&severity=warning
+GET /api/logs?file=messages&limit=500&compact=false
 GET /api/analyze?file=messages&limit=2000
 GET /api/summary
 GET /api/ai-analyze?file=messages&limit=500&severity=warning
@@ -263,7 +278,58 @@ GET /api/rules
 - `file` 必须是 `/logs` 下的相对路径。
 - 不允许绝对路径。
 - 不允许 `../../` 路径穿越。
+- `/api/logs` 默认 `compact=true`，会把连续近似日志合并展示；需要逐行原始日志时设置 `compact=false`。
+- `compact_gap_seconds` 默认 `120`，表示相邻两条近似日志在该时间间隔内才会合并。
 - `/api/ai-analyze` 只有在 `ENABLE_AI=true` 且配置了 `OPENAI_API_KEY` 后可用。
+
+## UGREEN NAS 日志中心接入
+
+UGREEN NAS 的“日志中心”会把结构化记录保存在：
+
+```text
+/var/lib/log_serv/log_server_record.db
+/var/lib/log_serv/transfer_log.db
+```
+
+项目默认把该目录只读挂载到容器：
+
+```yaml
+volumes:
+  - /var/lib/log_serv:/nas-log-center:ro
+```
+
+挂载成功后，页面“日志文件”下拉会出现：
+
+```text
+nas-log-center/log_server_record.db
+nas-log-center/transfer_log.db
+```
+
+这两个虚拟日志源支持和普通 syslog 文件一样的查询能力：
+
+- 按用户名搜索，例如 `zhr2038`、`cctv`。
+- 按来源 IP 搜索，例如 `192.168.1.141`。
+- 按文件路径搜索，例如 `/volume2/CCTV`。
+- 按模块搜索，例如 `login`、`samba`、`control_panel`。
+
+典型内容：
+
+- `log_server_record.db`：登录、控制面板、Samba 连接、系统启动/关机、存储管理等。
+- `transfer_log.db`：Samba 文件读取、写入、创建、删除、重命名、传输类记录。
+
+相关环境变量：
+
+```bash
+ENABLE_NAS_LOG_CENTER=true
+NAS_LOG_CENTER_DIR=/nas-log-center
+NAS_LOG_CENTER_DEVICE=HR-Cloud
+```
+
+如果不是 UGREEN NAS，或者没有 `/var/lib/log_serv`，可以关闭：
+
+```bash
+ENABLE_NAS_LOG_CENTER=false
+```
 
 ## syslog-ng 日志落盘建议
 
@@ -294,6 +360,61 @@ volumes:
 - TCP 601 映射到 syslog-ng 容器的 TCP 接收端口。
 - 日志目录统一写到 `/volume1/docker/syslog/log`。
 - 分析器只读挂载日志目录，避免误写。
+
+## syslog-ng 日志归档与清理
+
+为了避免 `/volume1/docker/syslog/log` 不断增长，项目提供了宿主机侧保留脚本：
+
+```text
+ops/syslog-retention.sh
+```
+
+默认策略：
+
+- `remote/<设备>/<日期>.log`：超过 2 天后压缩到 `/volume1/docker/syslog/archive/remote/.../*.gz`。
+- `messages`、`messages-kv.log`：超过 200 MB 时轮转，并通知 `syslog-ng` 容器重新打开日志文件。
+- 归档压缩包：默认保留 45 天，超过后删除。
+- 分析器只读取 `/volume1/docker/syslog/log`，不会扫描 archive 目录。
+
+安装到宿主机 systemd：
+
+```bash
+sudo install -m 0755 ops/syslog-retention.sh /usr/local/sbin/syslog-retention.sh
+sudo install -m 0644 ops/syslog-retention.service /etc/systemd/system/syslog-retention.service
+sudo install -m 0644 ops/syslog-retention.timer /etc/systemd/system/syslog-retention.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now syslog-retention.timer
+```
+
+先演练不实际删除：
+
+```bash
+sudo DRY_RUN=true /usr/local/sbin/syslog-retention.sh
+```
+
+立即执行一次：
+
+```bash
+sudo systemctl start syslog-retention.service
+```
+
+查看定时器：
+
+```bash
+systemctl list-timers syslog-retention.timer
+journalctl -u syslog-retention.service -n 100 --no-pager
+```
+
+可调整参数：
+
+```ini
+Environment=RETENTION_DAYS=45
+Environment=COMPRESS_AFTER_DAYS=2
+Environment=ROTATE_ACTIVE_MAX_MB=200
+Environment=SYSLOG_CONTAINER=syslog-ng
+```
+
+如果你的 syslog-ng 容器名称不是 `syslog-ng`，请修改 `SYSLOG_CONTAINER`。
 
 ## NAS 日志接入建议
 

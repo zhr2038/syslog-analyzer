@@ -156,6 +156,48 @@ body {
   color: #1f2937;
 }
 
+.compact-switch {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.time-range {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.repeat-pill {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.compact-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.raw-sample {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #1f2937;
+  border-left: 3px solid #dbeafe;
+  padding: 6px 8px;
+  margin-top: 5px;
+  background: #f8fafc;
+}
+
 .badge-severity {
   font-size: 11px;
   font-weight: 750;

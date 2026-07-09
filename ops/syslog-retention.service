@@ -1,0 +1,15 @@
+[Unit]
+Description=Syslog analyzer log retention
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=LOG_DIR=/volume1/docker/syslog/log
+Environment=ARCHIVE_DIR=/volume1/docker/syslog/archive
+Environment=RETENTION_DAYS=45
+Environment=COMPRESS_AFTER_DAYS=2
+Environment=ROTATE_ACTIVE_MAX_MB=200
+Environment=SYSLOG_CONTAINER=syslog-ng
+ExecStart=/usr/local/sbin/syslog-retention.sh
+

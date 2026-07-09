@@ -15,8 +15,10 @@ from .log_reader import (
     LogReader,
     MAX_ANALYZE_LIMIT,
     MAX_API_LIMIT,
+    compact_entries,
     public_entry,
 )
+from .nas_log_center import NasLogCenter
 from .rules_engine import RuleSet
 
 
@@ -25,9 +27,13 @@ STATIC_DIR = BASE_DIR / "static"
 LOG_ROOT = os.getenv("LOG_ROOT", "/logs")
 RULES_FILE = os.getenv("RULES_FILE", str(BASE_DIR / "rules.yaml"))
 SUMMARY_SCAN_LINES = int(os.getenv("SUMMARY_SCAN_LINES", "20000"))
+ENABLE_NAS_LOG_CENTER = os.getenv("ENABLE_NAS_LOG_CENTER", "true").strip().lower() in {"1", "true", "yes", "on"}
+NAS_LOG_CENTER_DIR = os.getenv("NAS_LOG_CENTER_DIR", "/nas-log-center")
+NAS_LOG_CENTER_DEVICE = os.getenv("NAS_LOG_CENTER_DEVICE", "NAS")
 
 rules = RuleSet.load(RULES_FILE)
-reader = LogReader(LOG_ROOT, rules)
+nas_log_center = NasLogCenter(NAS_LOG_CENTER_DIR, NAS_LOG_CENTER_DEVICE) if ENABLE_NAS_LOG_CENTER else None
+reader = LogReader(LOG_ROOT, rules, nas_log_center=nas_log_center)
 
 app = FastAPI(
     title="Syslog Analyzer",
@@ -50,6 +56,13 @@ def health() -> dict[str, object]:
         "log_root_exists": reader.root.exists(),
         "rules_file": str(RULES_FILE),
         "rules_count": len(rules.rules),
+        "nas_log_center": {
+            "enabled": ENABLE_NAS_LOG_CENTER,
+            "dir": NAS_LOG_CENTER_DIR,
+            "exists": bool(nas_log_center and nas_log_center.exists()),
+            "device": NAS_LOG_CENTER_DEVICE,
+            "files": nas_log_center.list_files() if nas_log_center else [],
+        },
         "ai": ai_status(),
     }
 
@@ -73,6 +86,8 @@ def api_logs(
     keyword: str | None = Query(default=None),
     device: str | None = Query(default=None),
     severity: str | None = Query(default=None, pattern="^(critical|error|warning|info)?$"),
+    compact: bool = Query(default=True, description="Merge consecutive similar log lines for display"),
+    compact_gap_seconds: int = Query(default=120, ge=0, le=3600),
 ) -> dict[str, object]:
     try:
         entries = reader.get_entries(
@@ -85,9 +100,14 @@ def api_logs(
     except LogAccessError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    display_entries = compact_entries(entries, compact_gap_seconds) if compact else entries
+
     return {
-        "count": len(entries),
-        "entries": [public_entry(entry) for entry in entries],
+        "count": len(display_entries),
+        "raw_count": len(entries),
+        "compacted": compact,
+        "compact_gap_seconds": compact_gap_seconds,
+        "entries": [public_entry(entry) for entry in display_entries],
     }
 
 

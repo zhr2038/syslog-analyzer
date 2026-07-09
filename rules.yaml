@@ -293,6 +293,20 @@ rules:
     chinese_summary: NAS 共享文件操作成功
     suggestion: 用于审计用户、来源 IP、操作类型和文件路径；异常高频时检查是否有批量任务或异常客户端
 
+  - id: nas_samba_write_file
+    pattern: '\b(ugreen_transfer_log|ugreen_log_center|samba|smbd_audit)\b.*\b(write file|create file|delete|rename|pwrite|unlink|mkdir|rmdir)\b'
+    severity: info
+    category: nas_file_write
+    chinese_summary: NAS 文件写入、创建、删除或重命名
+    suggestion: 用于审计谁从哪个 IP 对哪个文件进行了写入、创建、删除或重命名；如路径或来源异常，请核对共享权限和客户端行为
+
+  - id: nas_samba_read_file
+    pattern: '\b(ugreen_transfer_log|ugreen_log_center|samba|smbd_audit)\b.*\b(read file|open|pread|connect)\b'
+    severity: info
+    category: nas_file_access
+    chinese_summary: NAS 文件读取、打开或共享连接
+    suggestion: 用于审计谁从哪个 IP 读取或连接了共享；如访问频率异常，请检查客户端任务和共享权限
+
   - id: nas_smb_service
     pattern: '\b(smbd|nmbd|winbindd|samba)\b.*\b(connect|disconnect|session|tree connect|share|denied|failed|error|closed)\b'
     severity: warning
@@ -307,8 +321,29 @@ rules:
     chinese_summary: NAS 登录或认证失败
     suggestion: 检查账号密码、来源 IP、登录方式、账号锁定策略和是否存在异常登录尝试
 
+  - id: nas_ssh_login_success
+    pattern: '(sshd|ssh|ugreen_log_center\[control_panel\]).*\b(accepted password|accepted publickey|ssh2|via ssh|logged into the system via ssh)\b'
+    severity: info
+    category: nas_ssh_login_success
+    chinese_summary: NAS SSH 登录成功
+    suggestion: 用于审计谁通过 SSH 登录 NAS；如来源 IP 或时间异常，请检查 SSH 暴露范围、密钥和账号安全
+
+  - id: nas_web_login_failed
+    pattern: '\b(ugreen_log_center\[login\]|ug_login|login)\b.*\b(fail|failed|failure|denied|invalid|locked|incorrect)\b'
+    severity: warning
+    category: nas_web_login_failed
+    chinese_summary: NAS Web/客户端登录失败
+    suggestion: 检查登录账号、来源 IP、失败次数、密码策略和是否存在异常登录尝试
+
+  - id: nas_web_login_success
+    pattern: '\b(ugreen_log_center\[login\]|ug_login|login)\b.*\b(logged in successfully|login successful|successfully using biometrics|login ok)\b'
+    severity: info
+    category: nas_web_login_success
+    chinese_summary: NAS Web/客户端登录成功
+    suggestion: 用于审计谁通过 Web、App 或客户端登录 NAS；如来源异常，请及时修改密码并限制访问来源
+
   - id: nas_login_success
-    pattern: '\b(ug_login|sshd|pam|login)\b.*\b(accepted|success|successful|session opened|login ok)\b'
+    pattern: '\b(ug_login|sshd|pam)\b.*\b(accepted|success|successful|session opened|login ok)\b'
     severity: info
     category: nas_login_success
     chinese_summary: NAS 登录或认证成功

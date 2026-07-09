@@ -1,0 +1,10 @@
+[Unit]
+Description=Run syslog analyzer log retention daily
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
