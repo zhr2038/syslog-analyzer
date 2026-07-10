@@ -7,7 +7,30 @@ from typing import Iterable
 from .rules_engine import SEVERITY_RANK, highest_severity
 
 
-GENERAL_ONLY_CATEGORIES = {"general_event", "auth_success", "firewall_allow", "dhcp_lease", "dns_service", "ntp_sync", "vpn_up", "wifi_client_connected", "config_change"}
+GENERAL_ONLY_CATEGORIES = {
+    "general_event",
+    "auth_success",
+    "firewall_allow",
+    "dhcp_lease",
+    "dns_service",
+    "ntp_sync",
+    "vpn_up",
+    "wifi_client_connected",
+    "config_change",
+    "router_boot",
+    "router_clean_shutdown",
+    "router_resource_heartbeat",
+    "router_reboot_request",
+    "router_crashlog_metadata",
+}
+DETECTOR_OWNED_CATEGORIES = {
+    "kernel_crash",
+    "router_kernel_crash",
+    "router_broadcom_ipv6_crash",
+    "router_unclean_reboot",
+    "router_service_watchdog_loop",
+    "router_soft_lockup",
+}
 
 PROBLEM_TEMPLATES: dict[str, dict[str, object]] = {
     "link_down": {
@@ -39,6 +62,42 @@ PROBLEM_TEMPLATES: dict[str, dict[str, object]] = {
         "explanation": "出现 kernel panic、oops、crash 或严重内核异常。",
         "causes": ["固件或驱动缺陷", "内存/存储/硬件异常", "异常流量或功能触发系统缺陷"],
         "suggestions": ["保存 panic/oops 原文和完整时间窗口日志", "记录设备型号和固件版本", "检查崩溃前是否有配置变更或硬件告警", "尽快升级稳定固件或联系厂商支持"],
+    },
+    "router_unclean_reboot": {
+        "title": "路由器疑似非正常重启",
+        "explanation": "新启动前没有采集到正常关机标记，更像内核崩溃、卡死后看门狗复位或突然断电。",
+        "causes": ["内核/驱动 panic 导致立即复位", "系统卡死后被硬件看门狗重启", "电源、插座或供电适配器瞬时中断"],
+        "suggestions": ["查看本次 BOOT_MARKER 后上报的 CRASHLOG 调用链", "查看重启前最后三条 HEARTBEAT 的内存、连接表、负载和温度", "核对同时间 UPS/插座/光猫是否也掉电", "保留该次时间窗口后再做固件或功能隔离对比"],
+    },
+    "router_kernel_crash": {
+        "title": "路由器持久崩溃记录",
+        "explanation": "路由器 mtdoops/crashlog 中保留了内核 panic 或 oops，这是异常重启的直接证据。",
+        "causes": ["网络加速、无线或交换驱动缺陷", "固件内核缺陷被特定流量或功能触发", "内存或闪存硬件异常"],
+        "suggestions": ["保存 CRASHLOG_BEGIN 到 CRASHLOG_END 之间的调用链", "核对崩溃内核版本与当前固件，避免将旧转储当成新故障", "升级到厂商推荐的稳定固件", "仍复现时将调用链、型号、固件和触发时间提交厂商"],
+    },
+    "router_broadcom_ipv6_crash": {
+        "title": "Broadcom IPv6 网络路径崩溃",
+        "explanation": "调用链落在 Broadcom 加速收包和 IPv6 TCP 建连路径，属于固件/驱动级问题的强特征。",
+        "causes": ["Broadcom runner/flow cache 收包路径的空指针缺陷", "IPv6 TCP 流量触发固件中的边界条件", "第三方固件与底层闭源驱动版本组合问题"],
+        "suggestions": ["优先使用包含最新 ASUS GPL 修复的稳定固件", "若新固件仍出现同一调用链，在维护窗口暂停 IPv6 观察", "仍复现再分别暂停硬件加速、AiProtection/流量分析做单变量对比", "不要同时改多项，每个状态至少观察一个原平均崩溃周期"],
+    },
+    "router_service_watchdog_loop": {
+        "title": "ASUS 远程管理服务重启风暴",
+        "explanation": "watchdog 持续执行 stop_aae/start_mastiff，表示 ASUS Router App/AiCloud 相关服务没有稳定运行。",
+        "causes": ["ASUS 账号绑定或远程连接状态异常", "aae/mastiff 配置损坏或无法访问云端", "当前固件中的服务稳定性缺陷"],
+        "suggestions": ["在管理页面检查 ASUS 账号绑定、远程管理和 AiCloud 状态", "如不使用 ASUS Router App/AiCloud，关闭远程功能后观察重启循环是否停止", "如需保留该功能，重新绑定账号并升级稳定固件", "对比路由器整机崩溃时间，确认服务风暴是否为触发条件"],
+    },
+    "router_crashlog_storage": {
+        "title": "路由器 crashlog 分区读取异常",
+        "explanation": "专用崩溃分区出现 NAND 不可纠正错误或 I/O error，下次 panic 可能无法完整落盘。",
+        "causes": ["crashlog 分区有坏页或 ECC 数据损坏", "旧固件写入的 mtdoops 数据已损坏", "路由器 NAND 闪存开始老化"],
+        "suggestions": ["保持远程 syslog 和 5 分钟资源心跳作为主证据", "不要手工反复读写或擦除 mtd3 crashlog 分区", "备份路由器配置并观察 JFFS/其他 NAND 分区是否也报 ECC/I/O 错误", "如错误扩展到 JFFS 或配置丢失，应考虑硬件送修或替换"],
+    },
+    "router_conntrack_pressure": {
+        "title": "路由器连接跟踪表压力过高",
+        "explanation": "conntrack 表接近或达到上限，新连接可能丢弃，严重时会放大固件稳定性问题。",
+        "causes": ["P2P/下载或大量短连接", "公网扫描、攻击或内网感染终端", "conntrack 上限偏低或超时配置不合理"],
+        "suggestions": ["查看高连接数终端和服务", "限制 P2P/下载并关闭不必要的公网暴露端口", "确认连接数回落后是否仍会崩溃", "只在了解内存代价后调整 conntrack 上限"],
     },
     "wan_down": {
         "title": "WAN 链路断开事件",
@@ -255,6 +314,9 @@ PROBLEM_TEMPLATES: dict[str, dict[str, object]] = {
 
 def analyze_entries(entries: list[dict[str, object]]) -> list[dict[str, object]]:
     problems: list[dict[str, object]] = []
+    problems.extend(_detect_router_unclean_boot(entries))
+    problems.extend(_detect_router_service_watchdog_loops(entries))
+    problems.extend(_detect_router_soft_lockups(entries))
     problems.extend(_detect_abnormal_reboot(entries))
     problems.extend(_detect_wan_access_chain(entries))
     problems.extend(_detect_link_flapping(entries))
@@ -299,7 +361,7 @@ def _detect_uncovered_alerts(entries: list[dict[str, object]], covered_events: s
     problems: list[dict[str, object]] = []
     for key, group in groups.items():
         device, category = key.split("|", 1)
-        if category in GENERAL_ONLY_CATEGORIES:
+        if category in GENERAL_ONLY_CATEGORIES or category in DETECTOR_OWNED_CATEGORIES:
             continue
         template = _template_for_category(category, group)
         problems.append(
@@ -316,8 +378,127 @@ def _detect_uncovered_alerts(entries: list[dict[str, object]], covered_events: s
     return problems
 
 
+def _detect_router_unclean_boot(entries: list[dict[str, object]]) -> list[dict[str, object]]:
+    unclean_events = _entries_with_categories(entries, {"router_unclean_reboot"})
+    by_device = _group_by(entries, lambda item: str(item["device"]))
+    problems: list[dict[str, object]] = []
+    root_cause_categories = {
+        "kernel_crash",
+        "router_kernel_crash",
+        "router_broadcom_ipv6_crash",
+        "memory_pressure",
+        "router_conntrack_pressure",
+        "hardware_temperature",
+        "hardware_fan_power",
+        "router_crashlog_storage",
+    }
+
+    for device, device_unclean_events in _group_by(unclean_events, lambda item: str(item["device"])).items():
+        boot_event = device_unclean_events[-1]
+        related = _events_near(boot_event, by_device.get(device, []), minutes=10, categories=root_cause_categories)
+        evidence = [boot_event] + [item for item in related if _event_key(item) != _event_key(boot_event)]
+        evidence = evidence[:10]
+        categories = _category_set(evidence)
+
+        if "router_broadcom_ipv6_crash" in categories:
+            causes = [
+                "Broadcom 网络加速/交换驱动在 IPv6 TCP 收包路径上触发空指针",
+                "固件底层闭源驱动与当前功能组合存在缺陷",
+            ]
+        elif categories & {"kernel_crash", "router_kernel_crash"}:
+            causes = ["持久 crashlog 已记录内核 panic/oops", "固件或驱动崩溃后路由器立即复位"]
+        elif "memory_pressure" in categories:
+            causes = ["崩溃前可用内存过低或发生 OOM", "插件、流量分析或服务存在内存泄漏"]
+        elif "router_conntrack_pressure" in categories:
+            causes = ["连接跟踪表在崩溃前接近耗尽", "P2P、扫描或异常终端造成连接风暴"]
+        elif categories & {"hardware_temperature", "hardware_fan_power"}:
+            causes = ["崩溃前出现温度或供电告警", "散热或电源瞬时不稳定"]
+        else:
+            causes = ["系统卡死后被看门狗重启", "突然断电或电源适配器不稳定", "最终 panic 日志未能在复位前发送"]
+
+        problems.append(
+            _problem(
+                title="路由器疑似非正常重启",
+                severity="critical",
+                events=evidence,
+                explanation="采集器发现上次运行没有留下 CLEAN_SHUTDOWN 就进入新启动，需要按崩溃、看门狗复位或断电处理。",
+                causes=causes,
+                suggestions=[
+                    "优先查看本次启动后上报的 CRASHLOG 调用链",
+                    "查看重启前最后三条 HEARTBEAT 的内存、连接表、负载和温度",
+                    "核对同时间光猫、NAS 或其他设备是否也掉电",
+                    "按证据选择固件升级或单功能隔离对比，不同时改动多项配置",
+                ],
+                devices=[device],
+            )
+        )
+    return problems
+
+
+def _detect_router_service_watchdog_loops(entries: list[dict[str, object]]) -> list[dict[str, object]]:
+    events = _entries_with_categories(entries, {"router_service_watchdog_loop"})
+    problems: list[dict[str, object]] = []
+    for device, group in _group_by(events, lambda item: str(item["device"])).items():
+        window = _first_window(group, minutes=10, threshold=6)
+        if not window:
+            continue
+        problems.append(
+            _problem(
+                title="ASUS mastiff/aae 服务重启风暴",
+                severity="warning",
+                events=window[-10:],
+                explanation="watchdog 在短时间内反复 stop_aae/start_mastiff，这是 ASUS Router App/AiCloud 远程管理链路的异常循环，不等于整机已重启。",
+                causes=[
+                    "ASUS 账号绑定或远程连接状态异常",
+                    "aae/mastiff 无法访问云端、配置损坏或进程自身退出",
+                    "当前固件的远程管理服务缺陷",
+                ],
+                suggestions=[
+                    "在管理页面检查 ASUS 账号绑定、远程管理和 AiCloud 状态",
+                    "如不使用 ASUS Router App/AiCloud，关闭远程功能后观察循环是否停止",
+                    "如必须使用，先重新绑定账号，再升级或重置该功能配置",
+                    "对比整机崩溃时间，确认该风暴是否为触发条件",
+                ],
+                devices=[device],
+            )
+        )
+    return problems
+
+
+def _detect_router_soft_lockups(entries: list[dict[str, object]]) -> list[dict[str, object]]:
+    events = _entries_with_categories(entries, {"router_soft_lockup"})
+    problems: list[dict[str, object]] = []
+    for device, group in _group_by(events, lambda item: str(item["device"])).items():
+        problems.append(
+            _problem(
+                title="路由器 CPU soft lockup",
+                severity="critical",
+                events=group[-10:],
+                explanation="持久崩溃记录显示一个或多个 CPU 长时间无法调度，内核看门狗已报 soft lockup。",
+                causes=[
+                    "驱动在中断或内核线程中长时间占用 CPU",
+                    "网络加速、加密或流量检测模块死锁",
+                    "固件缺陷或极端流量压力触发调度卡死",
+                ],
+                suggestions=[
+                    "保留 soft lockup 中的 CPU 号、被卡住的线程名和调用链",
+                    "核对转储内核构建日期，确认是否来自当前固件",
+                    "升级稳定固件；复现时根据被卡线程逐项暂停相关加速/安全功能",
+                    "同时对比崩溃前心跳，排除高温、内存或 conntrack 耗尽",
+                ],
+                devices=[device],
+            )
+        )
+    return problems
+
+
 def _detect_abnormal_reboot(entries: list[dict[str, object]]) -> list[dict[str, object]]:
-    events = _entries_with_categories(entries, {"reboot", "watchdog"})
+    events = [
+        entry
+        for entry in _entries_with_categories(entries, {"reboot", "watchdog"})
+        if "router_soft_lockup" not in entry.get("categories", [])
+        and "router_kernel_crash" not in entry.get("categories", [])
+    ]
     problems: list[dict[str, object]] = []
     for device, device_events in _group_by(events, lambda item: str(item["device"])).items():
         window = _first_window(device_events, minutes=30, threshold=2)
@@ -505,26 +686,53 @@ def _detect_auth_failures(entries: list[dict[str, object]]) -> list[dict[str, ob
 
 
 def _detect_kernel_crashes(entries: list[dict[str, object]]) -> list[dict[str, object]]:
-    events = _entries_with_categories(entries, {"kernel_crash"})
+    events = _entries_with_categories(
+        entries,
+        {"kernel_crash", "router_kernel_crash", "router_broadcom_ipv6_crash"},
+    )
     problems: list[dict[str, object]] = []
     for device, group in _group_by(events, lambda item: str(item["device"])).items():
+        categories = _category_set(group)
+        broadcom_ipv6_path = "router_broadcom_ipv6_crash" in categories
         problems.append(
             _problem(
-                title="系统内核或固件异常",
+                title="Broadcom IPv6 网络路径内核崩溃" if broadcom_ipv6_path else "系统内核或固件异常",
                 severity="critical",
-                events=group[:10],
-                explanation="日志中出现 kernel panic/oops/crash，通常表示系统内核、驱动或固件发生严重异常。",
-                causes=[
-                    "固件 bug、驱动异常或内核模块崩溃",
-                    "内存/存储/硬件故障导致系统崩溃",
-                    "异常流量或功能触发了设备缺陷",
-                ],
-                suggestions=[
-                    "保存完整崩溃日志、固件版本和设备型号",
-                    "检查崩溃前是否有配置变更、流量突增或硬件告警",
-                    "升级到厂商推荐的稳定固件版本",
-                    "如果频繁出现，建议联系厂商并附带 panic/oops 原文",
-                ],
+                events=group[-10:],
+                explanation=(
+                    "调用链同时出现 bcmsw_rx/bcm_tcp_v4_recv 与 tcp_v6_syn_recv_sock/inet6_sk_rx_dst_set，"
+                    "强烈指向 Broadcom 网络加速驱动在 IPv6 TCP 收包路径上的固件缺陷。"
+                    if broadcom_ipv6_path
+                    else "日志中出现 kernel panic/oops/crash，通常表示系统内核、驱动或固件发生严重异常。"
+                ),
+                causes=(
+                    [
+                        "Broadcom runner/flow cache 加速收包路径的空指针缺陷",
+                        "IPv6 TCP 建连流量触发闭源驱动的边界条件",
+                        "第三方固件与 ASUS 底层 GPL/闭源模块版本组合问题",
+                    ]
+                    if broadcom_ipv6_path
+                    else [
+                        "固件 bug、驱动异常或内核模块崩溃",
+                        "内存/存储/硬件故障导致系统崩溃",
+                        "异常流量或功能触发了设备缺陷",
+                    ]
+                ),
+                suggestions=(
+                    [
+                        "核对 crashlog 内核版本与当前固件，只对新固件上再次出现的同调用链下结论",
+                        "升级到包含最新 ASUS 网络稳定性修复的稳定固件",
+                        "若同调用链复现，在维护窗口暂停 IPv6 进行单变量观察",
+                        "仍复现再分别暂停硬件加速和流量分析，每次只改一项并保留日志",
+                    ]
+                    if broadcom_ipv6_path
+                    else [
+                        "保存完整崩溃日志、固件版本和设备型号",
+                        "检查崩溃前是否有配置变更、流量突增或硬件告警",
+                        "升级到厂商推荐的稳定固件版本",
+                        "如果频繁出现，联系厂商并附带 panic/oops 原文",
+                    ]
+                ),
                 devices=[device],
             )
         )
@@ -585,9 +793,21 @@ def _has_category(entries: list[dict[str, object]], category: str) -> bool:
     return any(category in item.get("categories", []) for item in entries)
 
 
+def _category_set(entries: Iterable[dict[str, object]]) -> set[str]:
+    categories: set[str] = set()
+    for entry in entries:
+        entry_categories = entry.get("categories")
+        if isinstance(entry_categories, list):
+            categories.update(str(item) for item in entry_categories)
+    return categories
+
+
 def _primary_problem_category(entry: dict[str, object]) -> str:
     entry_categories = entry.get("categories")
     if isinstance(entry_categories, list):
+        for category in entry_categories:
+            if category in DETECTOR_OWNED_CATEGORIES:
+                return str(category)
         for category in entry_categories:
             if category not in GENERAL_ONLY_CATEGORIES and category != "general_event":
                 return str(category)
@@ -690,4 +910,24 @@ def _events_after(
         for event in candidates
         if isinstance(event.get("timestamp_dt"), datetime)
         and start_dt <= event["timestamp_dt"] <= end_dt
+    ]
+
+
+def _events_near(
+    center_event: dict[str, object],
+    candidates: list[dict[str, object]],
+    minutes: int,
+    categories: set[str],
+) -> list[dict[str, object]]:
+    center_dt = center_event.get("timestamp_dt")
+    matching = _entries_with_categories(candidates, categories)
+    if not isinstance(center_dt, datetime):
+        return matching[-9:]
+
+    delta = timedelta(minutes=minutes)
+    return [
+        event
+        for event in matching
+        if isinstance(event.get("timestamp_dt"), datetime)
+        and center_dt - delta <= event["timestamp_dt"] <= center_dt + delta
     ]

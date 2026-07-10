@@ -14,25 +14,123 @@ rules:
     suggestion: 结合前后日志确认是否存在频繁 up/down 抖动
 
   - id: reboot_restart
-    pattern: '\b(reboot|rebooted|restart|restarted|system boot|booting)\b'
+    pattern: '^(?!.*\brc_service\b.*\bnotify_rc reboot\b)(?!.*\bwaitting\b.*\blast_rc:reboot\b).*\b(reboot|rebooted|system boot|booting|boot marker|warm reset|cold reset|power-on reset)\b|\b(device|system|router|host|kernel)\b.{0,40}\b(restart|restarted|restarting)\b'
     severity: error
     category: reboot
-    chinese_summary: 设备出现重启或服务重启
+    chinese_summary: 设备或系统出现重启
     suggestion: 检查是否为人工操作、计划任务、供电异常、资源耗尽或固件问题
 
+  - id: router_reboot_request
+    pattern: '\brc_service\b.*\b(httpd\b.*notify_rc reboot|waitting .*last_rc:reboot)\b'
+    severity: info
+    category: router_reboot_request
+    chinese_summary: 路由器 Web/管理服务收到重启请求，不代表此时已完成重启
+    suggestion: 核对是否有管理员、升级或诊断功能发起重启，并以后续 BOOT_MARKER/开机日志确认是否真正执行
+
   - id: watchdog
-    pattern: '\bwatchdog\b'
+    pattern: '^(?!.*\brc_service\b.*\bwatchdog\b.*\b(notify_rc|waitting|stop_|start_)).*\b(watchdog (reset|reboot|timeout|bite|expired|lockup)|soft lockup|hard lockup|watchdogd.*(fail|stuck))\b'
     severity: critical
     category: watchdog
     chinese_summary: 看门狗异常，可能是系统卡死后自动重启
     suggestion: 检查重启前 CPU/内存/温度/内核日志，必要时升级固件或联系厂商
 
+  - id: router_crashlog_soft_lockup
+    pattern: '\brouter-crash(?:-collector)?\b.*\bCRASHLOG\b.*\bsoft lockup\b'
+    severity: critical
+    category: router_soft_lockup
+    chinese_summary: 历史崩溃转储显示 CPU 长时间无法调度，被内核看门狗判定为 soft lockup
+    suggestion: 查看被卡住的 CPU/中断线程和调用链，升级固件；若同一驱动复现，逐项停用相关加速或安全功能隔离
+
   - id: kernel_crash
-    pattern: '\b(kernel panic|oops|crash|segfault|fatal exception)\b'
+    pattern: '\b(kernel panic|internal error: oops|unable to handle kernel|null pointer dereference|call trace:|fatal exception|segfault|kernel crash)\b'
     severity: critical
     category: kernel_crash
     chinese_summary: 系统内核或固件崩溃
     suggestion: 保存完整崩溃日志，检查固件版本、硬件状态和崩溃前触发条件
+
+  - id: router_collector_unclean_boot
+    pattern: '\brouter-crash(?:-collector)?\b.*\bUNCLEAN_BOOT\b'
+    severity: critical
+    category: router_unclean_reboot
+    chinese_summary: 路由器上次运行未经正常关机流程就中断，疑似卡死、断电或看门狗重启
+    suggestion: 查看该启动标记前最后 10 分钟的 panic、OOM、温度、连接表和服务重启日志
+
+  - id: router_collector_boot
+    pattern: '\brouter-crash(?:-collector)?\b.*\bBOOT_MARKER\b'
+    severity: info
+    category: router_boot
+    chinese_summary: 路由器崩溃采集器已记录本次启动、固件和重启原因
+    suggestion: 与启动前的正常关机标记及 crashlog 对照，判断是人工重启还是异常中断
+
+  - id: router_collector_clean_shutdown
+    pattern: '\brouter-crash(?:-collector)?\b.*\bCLEAN_SHUTDOWN\b'
+    severity: info
+    category: router_clean_shutdown
+    chinese_summary: 路由器进入正常关机或重启流程
+    suggestion: 如果随后出现启动日志，通常是人工、升级或计划重启，不应单独判为崩溃
+
+  - id: router_collector_crashlog
+    pattern: '\brouter-crash(?:-collector)?\b.*\bCRASHLOG\b.*\b(kernel panic|oops|unable to handle|null pointer|fatal exception|call trace)\b'
+    severity: critical
+    category: router_kernel_crash
+    chinese_summary: 路由器的持久崩溃分区中找到内核 panic/oops 证据
+    suggestion: 保留调用链、进程名、固件版本和触发时的网络功能，升级稳定固件或提交厂商定位
+
+  - id: router_collector_crashlog_metadata
+    pattern: '\brouter-crash(?:-collector)?\b.*\bCRASHLOG_METADATA\b.*\bstored_kernel_line='
+    severity: info
+    category: router_crashlog_metadata
+    chinese_summary: 路由器已上报持久 crashlog 中的内核构建版本，用于区分历史崩溃和当前固件
+    suggestion: 对比 stored_kernel_line 的构建日期与 current_firmware；旧构建转储只作历史线索，当前固件复现同调用链才能确认未修复
+
+  - id: router_broadcom_ipv6_crash_path
+    pattern: '\b(inet6_sk_rx_dst_set|tcp_v6_syn_recv_sock|bcm_tcp_v4_recv|bcmsw_rx)\b'
+    severity: critical
+    category: router_broadcom_ipv6_crash
+    chinese_summary: Broadcom 网络加速/交换驱动在 IPv6 TCP 接收路径上异常
+    suggestion: 先升级到已修复相关网络稳定问题的固件；若仍复现，在可控窗口分别停用 IPv6、硬件加速或流量分析功能做隔离对比
+
+  - id: router_service_watchdog_loop
+    pattern: '\brc_service\b.*\bwatchdog\b.*\b(notify_rc (stop_aae|start_mastiff)|waitting .* via watchdog)\b|\bMastiff:\s*init\b'
+    severity: warning
+    category: router_service_watchdog_loop
+    chinese_summary: ASUS mastiff/aae 远程管理服务被看门狗反复拉起
+    suggestion: 检查 ASUS Router App/AiCloud/账号绑定状态和网络可达性；如不使用远程功能，可关闭后观察稳定性
+
+  - id: router_crashlog_storage_error
+    pattern: '\b(uncorrectable error).*(0xfe0|crashlog)|\bBuffer I/O error\b.*\bmtdblock3\b|\bmtdoops\b.*\b(no erase|error|fail)\b'
+    severity: error
+    category: router_crashlog_storage
+    chinese_summary: 路由器 crashlog 闪存分区读取异常，可能无法完整保存下次崩溃记录
+    suggestion: 先依赖远程 syslog 和采集器心跳留证；不要频繁擦写 crashlog 分区，持续报错时备份配置并评估闪存硬件问题
+
+  - id: router_resource_heartbeat
+    pattern: '\brouter-crash(?:-collector)?\b.*\bHEARTBEAT\b'
+    severity: info
+    category: router_resource_heartbeat
+    chinese_summary: 路由器定期资源心跳，包含运行时长、负载、内存、连接表和温度
+    suggestion: 崩溃后查看最后几条心跳，判断是否有内存、负载、连接表或温度逐步升高
+
+  - id: router_memory_alert
+    pattern: '\brouter-crash(?:-collector)?\b.*\bRESOURCE_ALERT\b.*\bmemory\b'
+    severity: critical
+    category: memory_pressure
+    chinese_summary: 路由器可用内存低于采集器阈值
+    suggestion: 从告警前后日志查找内存泄漏或高占用插件，减少附加功能并升级固件
+
+  - id: router_conntrack_alert
+    pattern: '\brouter-crash(?:-collector)?\b.*\bRESOURCE_ALERT\b.*\bconntrack\b|\bnf_conntrack:\s*table full\b'
+    severity: critical
+    category: router_conntrack_pressure
+    chinese_summary: 路由器连接跟踪表接近或已经耗尽
+    suggestion: 查找大量并发连接、P2P、扫描或异常终端，限制连接数并检查 conntrack 上限是否合理
+
+  - id: router_temperature_alert
+    pattern: '\brouter-crash(?:-collector)?\b.*\bRESOURCE_ALERT\b.*\btemperature\b'
+    severity: critical
+    category: hardware_temperature
+    chinese_summary: 路由器芯片温度超过采集器告警阈值
+    suggestion: 改善通风、清理灰尘、降低持续高负载，并检查温度是否在崩溃前持续上升
 
   - id: pppoe_down
     pattern: '\bpppoe\b.*\b(down|disconnect|disconnected|failed|timeout)\b'
@@ -61,6 +159,20 @@ rules:
     category: auth_failed
     chinese_summary: 认证失败，可能是账号密码错误或异常登录尝试
     suggestion: 核对账号密码、认证服务器和来源 IP，对异常登录来源做限制
+
+  - id: router_dropbear_auth_failed
+    pattern: '\bdropbear(?:\[\d+\])?\b.*\b(login attempt for nonexistent user|bad password|password auth failed|exit before auth|no matching algo|auth failed)\b'
+    severity: warning
+    category: auth_failed
+    chinese_summary: 路由器 SSH 认证前退出、账号不存在或密码认证失败
+    suggestion: 查看来源 IP 是否来自公网；关闭 WAN SSH、仅允许管理网段，并优先使用密钥认证
+
+  - id: router_dropbear_auth_success
+    pattern: '\bdropbear(?:\[\d+\])?\b.*\b(password auth succeeded|publickey auth succeeded)\b'
+    severity: info
+    category: auth_success
+    chinese_summary: 路由器 SSH 登录认证成功
+    suggestion: 核对账号和来源 IP 是否为预期管理操作，非预期时立即修改凭据并检查配置变更
 
   - id: authentication_success
     pattern: '\b(accepted password|accepted publickey|login successful|session opened|authenticated|auth success)\b'

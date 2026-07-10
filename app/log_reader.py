@@ -100,6 +100,19 @@ SYSLOG_RELATED_AUDIT_PATHS = tuple(
     for item in os.getenv("AUDIT_PATH_EXCLUDES", ",".join(DEFAULT_AUDIT_PATH_EXCLUDES)).split(",")
     if item.strip()
 )
+NAS_DEVICE_HINTS = {
+    item.strip().lower()
+    for item in os.getenv(
+        "NAS_DEVICE_HINTS",
+        f"NAS,HR-Cloud,UGREEN,{os.getenv('NAS_LOG_CENTER_DEVICE', '')}",
+    ).split(",")
+    if item.strip()
+}
+NAS_CONTEXT_RE = re.compile(
+    r"\b(ugreen_syslog|ugos|ug_login|log_server_record|transfer_log|smbd_audit|"
+    r"storage_serv|syncbackup_serv|filemgr_serv|conf_tool)\b",
+    re.IGNORECASE,
+)
 
 class LogAccessError(ValueError):
     pass
@@ -306,8 +319,12 @@ def parse_log_line(
     timestamp = parse_timestamp(raw_line)
     matched_rules = rules.match(raw_line)
     nas_rules = [rule for rule in matched_rules if rule.category.startswith("nas_")]
-    nas_rules = prefer_specific_nas_rules(nas_rules)
-    effective_rules = nas_rules or matched_rules
+    non_nas_rules = [rule for rule in matched_rules if not rule.category.startswith("nas_")]
+    if is_nas_context(source_file, path_device, raw_line):
+        nas_rules = prefer_specific_nas_rules(nas_rules)
+        effective_rules = nas_rules or non_nas_rules
+    else:
+        effective_rules = non_nas_rules
     categories = unique_preserve_order([rule.category for rule in effective_rules])
     specific_rules = [rule for rule in effective_rules if rule.category not in FALLBACK_CATEGORIES]
     non_general_rules = [rule for rule in effective_rules if rule.category != "general_event"]
@@ -338,6 +355,15 @@ def parse_log_line(
         "matched_rules": [rule.id for rule in matched_rules],
         "raw": raw_line,
     }
+
+
+def is_nas_context(source_file: str, path_device: str | None, raw_line: str) -> bool:
+    if is_virtual_path(source_file) or source_file.startswith("nas-log-center/"):
+        return True
+    device_norm = (path_device or "").strip().lower()
+    if device_norm and device_norm in NAS_DEVICE_HINTS:
+        return True
+    return bool(NAS_CONTEXT_RE.search(raw_line))
 
 
 def public_entry(entry: dict[str, object]) -> dict[str, object]:

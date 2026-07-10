@@ -40,6 +40,8 @@
 │   ├── nas_log_center.py
 │   └── rules_engine.py
 ├── ops/
+│   ├── install-router-crash-collector.sh
+│   ├── router-crash-collector.sh
 │   ├── syslog-retention.sh
 │   ├── syslog-retention.service
 │   └── syslog-retention.timer
@@ -51,6 +53,8 @@
 ├── docker-compose.yml
 ├── requirements.txt
 ├── rules.yaml
+├── tests/
+│   └── test_router_analysis.py
 ├── .dockerignore
 ├── .gitignore
 └── README.md
@@ -370,6 +374,60 @@ volumes:
 - TCP 601 映射到 syslog-ng 容器的 TCP 接收端口。
 - 日志目录统一写到 `/volume1/docker/syslog/log`。
 - 分析器只读挂载日志目录，避免误写。
+
+## ASUSWRT-Merlin 路由器崩溃采集
+
+仅依赖路由器普通 syslog 很难还原崩溃：内核 panic 可能在 UDP 日志发送前就已复位，而内存里的运行状态也会随重启消失。本项目为 ASUSWRT-Merlin 提供了一个轻量采集器：
+
+- 启动后上报 `BOOT_MARKER`，包含 boot ID、固件版本、NVRAM 重启原因和硬件 reset reason。
+- 正常关机/重启前上报 `CLEAN_SHUTDOWN`。下次启动如没有该标记，上报 `UNCLEAN_BOOT`。
+- 每 5 分钟上报 `HEARTBEAT`，记录运行时长、load、可用内存、conntrack 用量和温度。
+- 启动后从 `mtdoops/crashlog` 分区提取 panic/oops 关键调用链，通过远程 syslog 保存到 NAS。
+- 对可用内存、conntrack、负载和温度设置告警阈值，只有超限才发送 `RESOURCE_ALERT`。
+- 采集器不修改 WAN、IPv6、硬件加速或无线配置，也不会主动重启路由器。
+
+前置条件：
+
+- 路由器已开启 JFFS 自定义脚本。
+- 路由器远程 syslog 已指向 syslog-ng 服务器的 UDP 514。
+- 固件支持 `/jffs/scripts/services-start`、`services-stop` 和 `cru`，ASUSWRT-Merlin/KoolShare 通常已具备。
+
+上传并安装：
+
+```bash
+scp ops/router-crash-collector.sh ops/install-router-crash-collector.sh admin@<路由器IP>:/tmp/
+ssh admin@<路由器IP>
+sh /tmp/install-router-crash-collector.sh
+```
+
+安装器会保留现有 `services-start/services-stop`，只在文件尾部追加带标记的采集器调用，并生成 `.syslog-analyzer.bak` 备份。
+
+检查状态：
+
+```bash
+/jffs/scripts/router-crash-collector.sh status
+cru l | grep RouterCrashCollector
+tail -n 100 /jffs/syslog.log | grep router-crash-collector
+```
+
+手工发送一次资源心跳：
+
+```bash
+/jffs/scripts/router-crash-collector.sh sample
+```
+
+重要判读原则：`crashlog` 可能保留的是上一个固件版本的历史崩溃。应对比 `CRASHLOG_BEGIN` 中的当前固件和 crashlog 原文里的 kernel build，只有新固件上再次出现同一调用链，才能判定故障仍未修复。
+
+已内置的路由器专项规则包括：
+
+- 非正常启动与正常关机区分。
+- kernel panic、Oops、NULL pointer、Call trace。
+- `bcmsw_rx -> bcm_tcp_v4_recv -> tcp_v6_syn_recv_sock -> inet6_sk_rx_dst_set` Broadcom IPv6 崩溃路径。
+- `rc_service watchdog stop_aae/start_mastiff` 服务重启风暴，不再误判为整机重启。
+- crashlog NAND 不可纠正错误和 `mtdblock3` I/O error。
+- OOM、conntrack 耗尽、高负载、高温、看门狗复位。
+
+路由器管理端口建议只对 LAN/管理网开放。如 syslog 中持续出现公网 IP 连接 SSH/Web，应关闭 WAN 侧管理、改用 VPN 远程接入，并使用 SSH 密钥替代密码。
 
 ## syslog-ng 日志归档与清理
 
